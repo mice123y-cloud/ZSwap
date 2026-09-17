@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · ZSWAP</title>
+<style>
+  :root {
+    --bg: #0e1013; --panel: #14171b; --panel2: #1a1e23; --line: #24292f;
+    --text: #d8dce2; --muted: #8b939e; --accent: #c9a227; --accent-t: #e8c96a;
+    --danger: #c25e4d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.6 "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif;
+  }
+  .card {
+    width: min(360px, 90vw); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; padding: 30px 28px; display: grid; gap: 14px;
+  }
+  .brand { font-family: Consolas, "Courier New", monospace; font-size: 26px; font-weight: 700; letter-spacing: 4px; text-align: center; }
+  .brand b { color: var(--accent-t); }
+  .sub { text-align: center; color: var(--muted); font-size: 11.5px; letter-spacing: 2.5px; margin-top: -10px; }
+  .line { height: 1px; background: var(--line); margin: 4px 0; }
+  label { color: var(--muted); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
+  input {
+    width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: 9px 12px; font-size: 14px; outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  button {
+    width: 100%; background: #241f10; border: 1px solid var(--accent); color: var(--accent-t);
+    border-radius: 4px; padding: 10px; font-size: 14px; letter-spacing: 4px; cursor: pointer;
+    transition: background .15s;
+  }
+  button:hover { background: #2d2715; }
+  .err { color: var(--danger); font-size: 12.5px; min-height: 18px; text-align: center; }
+  .foot { color: var(--muted); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+  <form class="card" id="f">
+    <div class="brand">Z<b>SWAP</b></div>
+    <div class="sub">ZCode System Prompt Swap</div>
+    <div class="line"></div>
+    <div>
+      <label>账号</label>
+      <input type="text" id="u" autocomplete="username" placeholder="请输入账号" autofocus>
+    </div>
+    <div>
+      <label>密码</label>
+      <input type="password" id="p" autocomplete="current-password" placeholder="请输入密码">
+    </div>
+    <div class="err" id="err"></div>
+    <button type="submit" id="btn">登 录</button>
+  </form>
+
+<script>
+const $ = (id) => document.getElementById(id);
+$("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("err");
+  err.textContent = "";
+  $("btn").disabled = true;
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: $("u").value.trim(), password: $("p").value }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      location.href = "/";
+    } else {
+      err.textContent = j.error || "登录失败";
+      $("btn").disabled = false;
+    }
+  } catch (ex) {
+    err.textContent = "网络错误：" + ex.message;
+    $("btn").disabled = false;
+  }
+});
+</script>
+</body>
+</html>

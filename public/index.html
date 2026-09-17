@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZSWAP · 系统提示词替换工具</title>
+<style>
+  :root {
+    --bg: #0e1013; --panel: #14171b; --panel2: #1a1e23; --line: #24292f;
+    --text: #d8dce2; --muted: #8b939e; --accent: #c9a227; --accent-t: #e8c96a;
+    --ok: #4f9d69; --warn: #c98f3d; --danger: #c25e4d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13.5px/1.65 "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "HarmonyOS Sans SC", "Noto Sans SC", "Segoe UI", sans-serif;
+    padding: 14px 18px 22px;
+    zoom: 1.2;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  .mono { font-family: ui-monospace, "Cascadia Mono", "Sarasa Mono SC", Consolas, "Courier New", "Microsoft YaHei UI", monospace; }
+
+  /* ===== 顶栏 ===== */
+  .hd { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-name { font-size: 17px; font-weight: 700; letter-spacing: 3px; font-family: Consolas, "Courier New", monospace; }
+  .brand-name b { color: var(--accent-t); font-weight: 700; }
+  .brand-sub { color: var(--muted); font-size: 11px; letter-spacing: 1.5px; }
+  .hd-right { display: flex; align-items: center; gap: 10px; }
+  .clock { color: var(--muted); font-family: Consolas, "Microsoft YaHei UI", monospace; font-size: 12.5px; }
+
+  /* ===== 状态条 ===== */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-bottom: 14px; }
+  .stat { background: var(--panel); padding: 10px 16px; min-width: 0; }
+  .stat .lb { color: var(--muted); font-size: 10.5px; letter-spacing: 1.8px; text-transform: uppercase; margin-bottom: 4px; }
+  .stat .val { font-size: 17px; font-weight: 700; font-family: Consolas, "Microsoft YaHei UI", monospace; color: var(--text); word-break: break-all; }
+  .stat .sub { color: var(--muted); font-size: 11px; margin-top: 3px; word-break: break-all; }
+
+  /* ===== 两栏 ===== */
+  .cols { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .col { display: grid; gap: 14px; }
+
+  /* ===== 面板 ===== */
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px; }
+  .phead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .pt { color: var(--muted); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  .pt::before { content: ""; display: inline-block; width: 8px; height: 8px; background: var(--accent); }
+  .panel .row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+  .panel .row:last-child { border-bottom: none; }
+  .panel .row .k { color: var(--muted); flex: none; }
+  .panel .row .v { text-align: right; word-break: break-all; font-family: Consolas, "Microsoft YaHei UI", monospace; font-size: 12.5px; }
+
+  /* ===== 表格 ===== */
+  table.tbl { width: 100%; border-collapse: collapse; }
+  table.tbl thead th {
+    text-align: left; color: var(--muted); font-weight: 600; font-size: 10.5px; letter-spacing: 1.5px;
+    padding: 6px 10px; border-bottom: 1px solid var(--line); text-transform: uppercase;
+  }
+  table.tbl tbody td { padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: middle; }
+  table.tbl tbody tr:hover { background: var(--panel2); }
+
+  /* ===== 按钮 ===== */
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid #333a44; border-radius: 4px;
+    padding: 5px 13px; cursor: pointer; font-size: 12.5px; transition: border-color .15s, color .15s;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #241f10; border-color: var(--accent); color: var(--accent-t); }
+  button.danger { background: transparent; border-color: #6b3a32; color: var(--danger); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.mini { padding: 2px 9px; font-size: 12px; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btns.equal > button { flex: 1 1 0; white-space: nowrap; }
+
+  /* ===== 徽标 ===== */
+  .pill { display: inline-block; padding: 1px 9px; border: 1px solid; border-radius: 3px; font-size: 11px; letter-spacing: .5px; }
+  .pill.ok { color: var(--ok); border-color: #2c5a3d; background: rgba(79,157,105,.08); }
+  .pill.warn { color: var(--warn); border-color: #6b4f23; background: rgba(201,143,61,.08); }
+  .pill.danger { color: var(--danger); border-color: #6b3a32; background: rgba(194,94,77,.08); }
+  .pill.info { color: var(--accent-t); border-color: #6b5a26; background: rgba(201,162,39,.08); }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--danger); }
+
+  /* ===== 日志 ===== */
+  .logbox { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; height: 252px; overflow-y: auto; font-family: Consolas, "Sarasa Mono SC", "Microsoft YaHei UI", monospace; font-size: 11.5px; }
+  .logbox .le { padding: 2px 0; border-bottom: 1px dotted #1c2026; color: #b7bdc6; word-break: break-all; }
+  .logbox .le:last-child { border-bottom: none; }
+  .logbox .lt { color: #5f6873; margin-right: 8px; }
+  .logbox .empty { color: var(--muted); }
+
+  /* ===== 横幅 ===== */
+  .banner { border: 1px solid #6b3a32; border-left: 3px solid var(--danger); background: rgba(194,94,77,.07); padding: 8px 14px; margin-bottom: 14px; display: none; font-size: 13px; }
+  .banner b { color: var(--danger); }
+
+  /* ===== Logo ===== */
+  .logo-art { display: inline-block; }
+  .logo-row { display: flex; }
+  .logo-art .px, .logo-art .sh, .logo-art .sp { width: 7px; height: 12px; flex: none; }
+  .logo-art .px { transition: background .35s linear; }
+  .logo-art .sh { background: rgba(100, 108, 140, 0.85); }
+
+  /* ===== 弹窗 / 提示 ===== */
+  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.62); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; width: min(760px, 92vw); max-height: 92vh; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .modal .btns { justify-content: flex-end; margin: 0; }
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel2); border: 1px solid var(--line); padding: 9px 15px; border-radius: 5px; z-index: 99; opacity: 0; transition: opacity .2s; font-size: 13px; }
+  .toast.show { opacity: 1; }
+  .toast.err { border-color: var(--danger); }
+  .radio-group { display: flex; gap: 18px; font-size: 13px; align-items: center; }
+  .radio-group label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  textarea { width: 100%; box-sizing: border-box; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 10px; font: 12.5px/1.55 Consolas, "Sarasa Mono SC", "Microsoft YaHei UI", monospace; resize: vertical; }
+  #editCliPrefix { height: 60px; }
+  #editIdentity { height: 26vh; min-height: 110px; }
+  #editImportant { height: 24vh; min-height: 140px; }
+  #memContent { height: auto; flex: 1 1 auto; min-height: 140px; }
+  /* 编辑/记忆弹窗：固定高度 + 中部滚动 + 底部按钮常驻（小窗口也能点到保存） */
+  #editMask .modal { height: min(90vh, 800px); }
+  #memMask .modal { height: min(88vh, 720px); }
+  .modal-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 6px; }
+  input[type=text] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 7px 10px; font-size: 13px; }
+  .muted { color: var(--muted); }
+  .foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .foot .mono { font-size: 11px; }
+
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+  <!-- 顶栏 -->
+  <header class="hd">
+    <div class="brand">
+      <div class="logo-art" id="logoArt"></div>
+      <div>
+        <div class="brand-name">Z<b>SWAP</b></div>
+        <div class="brand-sub">ZCODE SYSTEM PROMPT SWAP</div>
+      </div>
+    </div>
+    <div class="hd-right">
+      <span id="zcodeRunPill"></span>
+      <span class="clock mono" id="clock">--:--:--</span>
+      <button class="primary" id="btnStartZcode">启动 ZCode</button>
+      <button class="danger" id="btnKillZcode">结束进程</button>
+      <button id="btnLogout">退出</button>
+    </div>
+  </header>
+
+  <div class="banner" id="zcodeDownBanner">
+    <b>ZCode 未运行</b> —— 注入/还原后需启动 ZCode，新提示词才会生效。点右上角「启动 ZCode」。
+  </div>
+
+  <!-- 状态条 -->
+  <div class="stats">
+    <div class="stat"><div class="lb">当前激活档案</div><div class="val" id="kpiProfile">-</div><div class="sub" id="kpiProfileEffect">-</div></div>
+    <div class="stat"><div class="lb">提示词注入状态</div><div class="val" id="kpiPatch">-</div><div class="sub" id="kpiPatchSub">-</div></div>
+    <div class="stat"><div class="lb">ZCode 进程</div><div class="val" id="kpiZcode">-</div><div class="sub" id="kpiZcodeExe">-</div></div>
+    <div class="stat"><div class="lb">配置备份</div><div class="val" id="kpiBackups">-</div><div class="sub">原始文件按版本备份于 backups\zcode-&lt;版本号&gt;.cjs</div></div>
+  </div>
+
+  <!-- 主内容两栏 -->
+  <div class="cols">
+    <!-- 左栏 -->
+    <div class="col">
+      <div class="panel">
+        <div class="phead">
+          <span class="pt">提示词档案</span>
+          <button class="primary mini" id="btnNew">＋ 新建档案</button>
+        </div>
+        <table class="tbl">
+          <thead><tr><th style="width:30%">档案名</th><th style="width:11%">大小</th><th style="width:15%">状态</th><th>操作</th></tr></thead>
+          <tbody id="profileList"></tbody>
+        </table>
+        <div class="muted" style="margin-top:8px">档案是 prompts\ 目录下的纯文本 .md；激活后需注入提示词并重启 ZCode 才生效。</div>
+      </div>
+
+      <div class="panel">
+        <div class="phead">
+          <span class="pt">配置备份</span>
+          <button class="mini" id="btnBackup">立即备份</button>
+        </div>
+        <table class="tbl">
+          <thead><tr><th>文件名</th><th style="width:14%">大小</th><th style="width:20%">时间</th><th style="width:12%">操作</th></tr></thead>
+          <tbody id="backupList"></tbody>
+        </table>
+        <div class="muted" style="margin-top:8px">「立即备份」对当前 zcode.cjs 存一份时间戳快照（保留最近 20 份）；版本提示词（zcode-&lt;版本号&gt;.cjs）自动保留最近 20 份，当前版本的基线永不删除。</div>
+      </div>
+
+      <div class="panel">
+        <div class="phead">
+          <span class="pt">记忆库</span>
+          <button class="mini" id="btnNewMemory">＋ 新建记忆</button>
+        </div>
+        <div class="muted" style="margin:0 0 8px" id="memRootPath">-</div>
+        <table class="tbl">
+          <thead><tr><th>记忆文件</th><th style="width:13%">大小</th><th style="width:19%">时间</th><th style="width:17%">操作</th></tr></thead>
+          <tbody id="memoryList"></tbody>
+        </table>
+        <div class="muted" style="margin-top:8px">ZCode 的跨会话记忆：MEMORY.md 是索引（每会话开始载入，索引行写得好坏直接影响召回命中率），其余文件一条记忆。改动<b>对新会话生效</b>，正在跑的会话感知不到。</div>
+      </div>
+    </div>
+
+    <!-- 右栏 -->
+    <div class="col">
+      <div class="panel">
+        <div class="phead">
+          <span class="pt">提示词注入</span>
+          <span id="patchPill"></span>
+        </div>
+        <div class="row"><span class="k">目标文件</span><span class="v" id="patchTarget">-</span></div>
+        <div class="row"><span class="k">ZCode 版本</span><span class="v" id="patchVersion">-</span></div>
+        <div class="row"><span class="k">版本基线</span><span class="v" id="patchBaseline">-</span></div>
+        <div class="row"><span class="k">文件状态</span><span class="v" id="patchState">-</span></div>
+        <div class="row"><span class="k">MD5</span><span class="v" id="patchMd5">-</span></div>
+        <div class="btns equal">
+          <button class="primary" id="btnPatch">注入提示词（当前档案）</button>
+          <button class="danger" id="btnUnpatch">还原原始文件</button>
+          <button id="btnEffective">查看实际生效</button>
+        </div>
+        <div class="muted" style="margin-top:8px">
+          注入/还原后重启 ZCode 生效；ZCode 更新后提示「被改动」时重新注入即可。
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="phead"><span class="pt">系统信息</span></div>
+        <div class="row"><span class="k">服务端口</span><span class="v" id="sysPort">-</span></div>
+        <div class="row"><span class="k">Node 版本</span><span class="v" id="sysNode">-</span></div>
+        <div class="row"><span class="k">ZCode 程序</span><span class="v" id="sysExePath">-</span></div>
+        <div class="row"><span class="k">工具版本</span><span class="v" id="sysVer">-</span></div>
+      </div>
+
+      <div class="panel">
+        <div class="phead"><span class="pt">操作日志</span></div>
+        <div class="logbox" id="logBox"><div class="empty">暂无操作记录</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="mono" id="sysPlatform">-</span>
+    <span>本工具仅修改 ZCode 的 zcode.cjs（提示词注入）与记忆文件（~/.zcode/memory），不改动其他任何文件，全程离线</span>
+    <span>Powered by X1A0Y</span>
+  </div>
+
+  <!-- 编辑弹窗 -->
+  <div class="modal-mask" id="editMask" style="display:none">
+    <div class="modal" style="width:min(760px,92vw)">
+      <div class="btns" style="justify-content:space-between;margin:0">
+        <input type="text" id="editName" placeholder="档案名（如：渗透测试）" style="width:300px">
+        <span class="muted" id="editNewHint"></span>
+      </div>
+      <div class="modal-scroll">
+        <div class="muted" style="margin:2px 0 4px;font-size:12px">每层独立生效，不改 = 保持原始提示词。</div>
+        <label class="muted" style="font-size:12px;margin-top:6px">① 第一句 cli_prefix（系统提示词开头）</label>
+        <textarea id="editCliPrefix" placeholder="留空 = 保持原文（You are ZCode, an interactive coding agent）"></textarea>
+        <label class="muted" style="font-size:12px;margin-top:8px">② 身份句 identity（改人设）</label>
+        <textarea id="editIdentity" placeholder="角色设定、工作场景、行为偏好……"></textarea>
+        <label class="muted" style="font-size:12px;margin-top:8px">③ 安全段 important（原文为授权安全策略段）</label>
+        <textarea id="editImportant" placeholder="留空 = 清空该段；填写内容则替换"></textarea>
+      </div>
+      <div class="btns">
+        <button id="btnEditCancel">取消</button>
+        <button class="primary" id="btnEditSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 实际生效提示词弹窗 -->
+  <div class="modal-mask" id="effMask" style="display:none">
+    <div class="modal" style="width:min(760px,94vw)">
+      <div class="phead"><span class="pt">实际生效的身份提示词（zcode.cjs 当前内容）</span></div>
+      <div id="effStatus" style="margin:6px 0 10px;font-size:13px"></div>
+      <textarea id="effContent" readonly style="width:100%;height:340px;box-sizing:border-box;font-family:Consolas,monospace;font-size:12px;white-space:pre;resize:vertical"></textarea>
+      <div class="btns" style="margin-top:10px">
+        <button id="btnEffClose">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 记忆编辑弹窗 -->
+  <div class="modal-mask" id="memMask" style="display:none">
+    <div class="modal" style="width:min(680px,92vw)">
+      <div class="btns" style="justify-content:space-between;margin:0">
+        <b id="memTitle">记忆</b>
+        <span class="muted" style="font-size:12px">含 frontmatter 的纯 Markdown，一个文件一条事实</span>
+      </div>
+      <textarea id="memContent" placeholder="---&#10;name: my-memory&#10;description: 一句话摘要&#10;metadata:&#10;  type: project&#10;---&#10;&#10;（记忆内容）"></textarea>
+      <div class="btns">
+        <button id="btnMemCancel">取消</button>
+        <button class="primary" id="btnMemSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null;
+let editingName = null;
+let lastEventsKey = null;
+
+/* ===== Logo：程序化 ZSWAP + 挤出阴影 ===== */
+const LOGO_LETTERS = {
+  Z: ["1111", "0001", "0010", "0100", "1111"],
+  S: ["1111", "1000", "1111", "0001", "1111"],
+  W: ["10001", "10001", "10101", "10101", "11011"],
+  A: ["0110", "1001", "1111", "1001", "1001"],
+  P: ["1111", "1001", "1111", "1000", "1000"],
+};
+function buildLogoGrid() {
+  const gap = 2;
+  let x = 0;
+  const placed = [];
+  for (const ch of "ZSWAP") {
+    placed.push({ x, bmp: LOGO_LETTERS[ch] });
+    x += LOGO_LETTERS[ch][0].length + gap;
+  }
+  const width = x - gap, height = 6;
+  const grid = Array.from({ length: height }, () => Array(width).fill(" "));
+  const isLetter = Array.from({ length: height }, () => Array(width).fill(false));
+  for (const { x: ox, bmp } of placed) {
+    for (let r = 0; r < bmp.length; r++)
+      for (let c = 0; c < bmp[r].length; c++)
+        if (bmp[r][c] === "1") { grid[r][ox + c] = "█"; isLetter[r][ox + c] = true; }
+  }
+  for (let r = 0; r < 5; r++)
+    for (let c = 0; c < width; c++)
+      if (isLetter[r][c] && r + 1 < height && c + 1 < width && !isLetter[r + 1][c + 1]) grid[r + 1][c + 1] = "▒";
+  return grid;
+}
+function tvColor() {
+  if (Math.random() < 0.3) {
+    const g = 165 + Math.floor(Math.random() * 80);
+    return `rgba(${g},${g},${g},0.9)`;
+  }
+  const h = Math.floor(Math.random() * 360);
+  const s = 18 + Math.floor(Math.random() * 22);
+  const l = 62 + Math.floor(Math.random() * 20);
+  return `hsla(${h},${s}%,${l}%,0.9)`;
+}
+let logoPixels = [];
+function renderLogo() {
+  const el = $("logoArt");
+  if (!el) return;
+  const grid = buildLogoGrid();
+  let html = "";
+  for (const row of grid) {
+    html += '<div class="logo-row">';
+    for (const ch of row) {
+      if (ch === "█") html += `<div class="px" style="background:${tvColor()}"></div>`;
+      else if (ch === "▒") html += '<div class="sh"></div>';
+      else html += '<div class="sp"></div>';
+    }
+    html += "</div>";
+  }
+  el.innerHTML = html;
+  logoPixels = Array.from(el.querySelectorAll(".px"));
+}
+if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  setInterval(() => {
+    if (document.hidden || !logoPixels.length) return; // 页面在后台时暂停，省资源
+    const n = Math.max(3, Math.floor(logoPixels.length * 0.3));
+    for (let i = 0; i < n; i++) {
+      const s = logoPixels[Math.floor(Math.random() * logoPixels.length)];
+      s.style.background = tvColor();
+    }
+  }, 420);
+}
+
+/* ===== 时钟 ===== */
+function tick() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  $("clock").textContent = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+setInterval(tick, 1000);
+tick();
+
+/* ===== 接口 ===== */
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (r.status === 401) {
+    location.href = "/login";
+    throw new Error("未登录");
+  }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+function toast(msg, isErr) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "toast show" + (isErr ? " err" : "");
+  setTimeout(() => (t.className = "toast"), 3200);
+}
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* ===== 刷新 ===== */
+async function refresh() {
+  try {
+    state = await api("/api/status");
+  } catch (e) {
+    $("zcodeRunPill").innerHTML = '<span class="pill danger">后端不可达</span>';
+    return;
+  }
+  const patch = state.patch || {};
+  const patchLabels = {
+    no_target: "未找到目标文件",
+    no_backup: "尚无原始备份",
+    original: "原始（未注入）",
+    patched: "已注入",
+    modified: "被外部改动",
+  };
+  const zc = state.zcode;
+  const zcRun = zc && zc.running === true;
+  const isOrig = state.active.profile === "__original__";
+
+  // 顶栏
+  $("zcodeRunPill").innerHTML = zcRun
+    ? '<span class="pill ok"><span class="dot on"></span>ZCode 运行中</span>'
+    : '<span class="pill danger"><span class="dot off"></span>ZCode 未运行</span>';
+  $("btnStartZcode").disabled = !(zc && zc.exePath);
+  $("zcodeDownBanner").style.display = zcRun ? "none" : "block";
+
+  // 状态条
+  $("kpiProfile").textContent = isOrig ? "（未选择）" : state.active.profile;
+  $("kpiProfileEffect").textContent = isOrig ? "先激活档案再注入" : state.active.effective ? "已选定 · 待注入生效" : "档案为空或丢失";
+  $("kpiPatch").textContent = patchLabels[patch.state] || "-";
+  $("kpiPatchSub").textContent = patch.target || "-";
+  $("kpiZcode").textContent = zcRun ? "运行中" : "未运行";
+  $("kpiZcodeExe").textContent = (zc && zc.exePath) || "-";
+  $("kpiBackups").textContent = state.backups.length ? state.backups.length + " 份" : "暂无";
+
+  // 注入面板
+  const pill =
+    patch.state === "patched" ? '<span class="pill ok">已注入</span>'
+    : patch.state === "modified" ? '<span class="pill warn">被改动</span>'
+    : patch.state === "original" ? '<span class="pill info">原始</span>'
+    : '<span class="pill danger">未就绪</span>';
+  $("patchPill").innerHTML = pill;
+  $("patchTarget").textContent = patch.target || "(未找到，可设 ZPS_ZCODE_CJS)";
+  $("patchVersion").textContent = patch.version || "-";
+  $("patchBaseline").textContent = patch.backup ? patch.backup.split(/[\\/]/).pop() : "未建立";
+  $("patchState").textContent = patchLabels[patch.state] || patch.state || "-";
+  $("patchMd5").textContent = patch.md5 || "-";
+  $("btnPatch").disabled = !(state.active.profile && !isOrig);
+  $("btnUnpatch").disabled = !(patch.target && patch.state !== "no_backup");
+
+  // 系统信息
+  $("sysPort").textContent = state.sys ? `127.0.0.1:${state.sys.port}` : "-";
+  $("sysNode").textContent = state.sys ? state.sys.node : "-";
+  $("sysExePath").textContent = (zc && zc.exePath) || "-";
+  $("sysVer").textContent = state.sys ? "v" + state.sys.version : "-";
+  $("sysPlatform").textContent = state.sys ? `${state.sys.platform} · node ${state.sys.node}` : "-";
+
+  // 备份表
+  const bks = state.backups.slice().reverse();
+  const curBaseline = patch.backup ? patch.backup.split(/[\\/]/).pop() : null; // 当前版本的基线，前端同样禁删
+  const isAnchor = (n) => n === "zcode.cjs.original" || n === "config.json.latest.bak" || (curBaseline && n === curBaseline);
+  $("backupList").innerHTML = bks.length
+    ? bks
+        .map(
+          (b) =>
+            `<tr><td class="mono">${esc(b.name)}${isAnchor(b.name) ? ' <span class="pill info">锚点</span>' : ""}</td><td class="muted">${(b.size / 1024).toFixed(0)} KB</td><td class="muted">${new Date(b.mtime).toLocaleString()}</td>` +
+            `<td>${isAnchor(b.name) ? '<span class="muted">不可删</span>' : `<button class="mini danger" onclick="delBackup('${esc(b.name)}')">删除</button>`}</td></tr>`
+        )
+        .join("")
+    : '<tr><td colspan="4" class="muted">暂无备份 —— 点「立即备份」创建第一份快照</td></tr>';
+
+  // 记忆库
+  const mem = state.memory || { root: "", files: [] };
+  $("memRootPath").textContent = mem.root ? `位置：${mem.root}` : "-";
+  $("memoryList").innerHTML = (mem.files || []).length
+    ? mem.files
+        .map(
+          (f) =>
+            `<tr><td class="mono">${esc(f.name)}${f.isIndex ? ' <span class="pill info">索引</span>' : ""}</td><td class="muted">${(f.size / 1024).toFixed(1)} KB</td><td class="muted">${new Date(f.mtime).toLocaleString()}</td>` +
+            `<td><button class="mini" onclick="openMemEdit('${esc(f.name)}')">编辑</button>${f.isIndex ? "" : ` <button class="mini danger" onclick="delMem('${esc(f.name)}')">删除</button>`}</td></tr>`
+        )
+        .join("")
+    : '<tr><td colspan="4" class="muted">暂无记忆文件</td></tr>';
+
+  // 日志（内容没变就不重渲染，避免滚动位置被重置）
+  const evs = state.events || [];
+  const evKey = evs.length ? evs[0].t + "|" + evs.length : "empty";
+  if (evKey !== lastEventsKey) {
+    lastEventsKey = evKey;
+    $("logBox").innerHTML = evs.length
+      ? evs.map((e) => `<div class="le"><span class="lt">${e.t.slice(11, 19)}</span>${esc(e.msg)}</div>`).join("")
+      : '<div class="empty">暂无操作记录</div>';
+  }
+
+  renderList();
+}
+
+function renderList() {
+  const wrap = $("profileList");
+  if (!state.profiles.length) {
+    wrap.innerHTML = '<tr><td colspan="4" class="muted">还没有档案，点「新建档案」创建。</td></tr>';
+    return;
+  }
+  wrap.innerHTML = state.profiles
+    .map((p) => {
+      const isActive = state.active.profile === p.name;
+      const kb = (p.size / 1024).toFixed(1);
+      return `<tr>
+        <td class="mono"><b>${esc(p.name)}</b></td>
+        <td class="muted">${kb} KB</td>
+        <td>${isActive ? '<span class="pill ok">已激活</span>' : '<span class="pill info">未激活</span>'}</td>
+        <td>
+          ${isActive ? "" : `<button class="mini" onclick="activateProfile('${esc(p.name)}')">激活</button>`}
+          <button class="mini" onclick="openEdit('${esc(p.name)}')">编辑</button>
+          <button class="mini danger" onclick="delProfile('${esc(p.name)}')">删除</button>
+        </td>
+      </tr>`;
+    })
+    .join("");
+}
+
+/* ---------- 编辑 ---------- */
+async function openEdit(name) {
+  editingName = name || null;
+  $("editNewHint").textContent = name ? "编辑档案" : "新建档案（预填原始提示词）";
+  $("editName").value = name || "";
+  $("editName").disabled = !!name;
+  // 新建档案：预填三层原文（在原生系统提示词的基础上修改）；编辑档案：读现有分层
+  const orig = state.originalPrompt || {};
+  let layers = {
+    cli_prefix: orig.cli_prefix || "",
+    identity: orig.identity || "",
+    important: orig.important || "",
+  };
+  if (name) {
+    try {
+      const r = await api("/api/profiles");
+      const p = (r.profiles || []).find((x) => x.name === name);
+      const content = p ? p.content : "";
+      if (p && p.format === "json") {
+        const obj = JSON.parse(content);
+        layers = {
+          cli_prefix: typeof obj.cli_prefix === "string" ? obj.cli_prefix : "",
+          identity: typeof obj.identity === "string" ? obj.identity : "",
+          important: typeof obj.important === "string" ? obj.important : "",
+        };
+      } else {
+        layers.identity = content; // 旧 MD 档案：整份进身份句层
+      }
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+  $("editCliPrefix").value = layers.cli_prefix;
+  $("editIdentity").value = layers.identity;
+  $("editImportant").value = layers.important;
+  $("editMask").style.display = "flex";
+}
+$("btnNew").onclick = () => openEdit(null);
+$("btnEditCancel").onclick = () => ($("editMask").style.display = "none");
+$("btnEditSave").onclick = async () => {
+  const name = $("editName").value.trim();
+  if (!name) return toast("请填写档案名", true);
+  const obj = {};
+  const cp = $("editCliPrefix").value.trim();
+  const id = $("editIdentity").value.trim();
+  const imp = $("editImportant").value;
+  if (cp) obj.cli_prefix = cp;          // 留空 = 不写该层 = 保持原文
+  if (id) obj.identity = id;
+  obj.important = imp.trim() === "" ? "" : imp; // 留空 = 清空该段（保持工具默认行为）
+  if (!cp && !id && imp.trim() === "") return toast("至少填写一层内容", true);
+  const content = JSON.stringify(obj, null, 2);
+  try {
+    if (editingName) {
+      await api("/api/profiles/" + encodeURIComponent(editingName), { method: "PUT", body: JSON.stringify({ content }) });
+    } else {
+      await api("/api/profiles", { method: "POST", body: JSON.stringify({ name, content }) });
+    }
+    $("editMask").style.display = "none";
+    toast("已保存（分层 JSON）");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+};
+
+/* ---------- 删除 ---------- */
+async function delProfile(name) {
+  if (!confirm(`确定删除档案「${name}」？`)) return;
+  try {
+    await api("/api/profiles/" + encodeURIComponent(name), { method: "DELETE" });
+    toast("已删除");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- 激活（一键直达，无弹窗） ---------- */
+async function activateProfile(name) {
+  try {
+    await api("/api/activate", { method: "POST", body: JSON.stringify({ profile: name }) });
+    toast(`已激活「${name}」，记得注入提示词`);
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- 记忆库 ---------- */
+let editingMem = null;
+function openMemEdit(name) {
+  editingMem = name || null;
+  $("memTitle").textContent = name ? `编辑记忆 ${name}` : "新建记忆";
+  if (name) {
+    api("/api/memory")
+      .then((r) => {
+        const f = (r.files || []).find((x) => x.name === name);
+        $("memContent").value = f ? f.content : "";
+        $("memMask").style.display = "flex";
+      })
+      .catch((e) => toast(e.message, true));
+  } else {
+    $("memContent").value = "---\nname: my-memory\ndescription: 一句话摘要（召回时据此判断相关性）\nmetadata:\n  type: project\n---\n\n（记忆内容：一个文件只放一条事实）";
+    $("memMask").style.display = "flex";
+  }
+}
+$("btnNewMemory").onclick = () => openMemEdit(null);
+$("btnMemCancel").onclick = () => ($("memMask").style.display = "none");
+$("btnMemSave").onclick = async () => {
+  const content = $("memContent").value;
+  try {
+    if (editingMem) {
+      await api("/api/memory/" + encodeURIComponent(editingMem), { method: "PUT", body: JSON.stringify({ content }) });
+    } else {
+      const name = prompt("记忆名（不含 .md，建议英文短横线，如 pentest-notes）");
+      if (!name) return;
+      await api("/api/memory", { method: "POST", body: JSON.stringify({ name, content }) });
+    }
+    $("memMask").style.display = "none";
+    toast("已保存，新会话生效");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+};
+async function delMem(name) {
+  if (!confirm(`确定删除记忆 ${name}？`)) return;
+  try {
+    await api("/api/memory/" + encodeURIComponent(name), { method: "DELETE" });
+    toast("已删除");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------- 注入 / 进程 ---------- */
+async function doPatch() {
+  const p = state.active.profile;
+  if (!p || p === "__original__") return toast("请先激活一个自定义档案", true);
+  if (!confirm(`将把档案「${p}」写进 ZCode 的 zcode.cjs（自动按版本备份原始文件）。继续？`)) return;
+  try {
+    await api("/api/patch", { method: "POST", body: JSON.stringify({}) });
+    toast("注入完成，结束并重启 ZCode 后生效");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+async function doUnpatch() {
+  const v = (state.patch && state.patch.version) || "<当前版本>";
+  if (!confirm(`从当前版本基线 backups\\zcode-${v}.cjs 还原原始 zcode.cjs（不会回滚 ZCode 程序版本）。继续？`)) return;
+  try {
+    await api("/api/unpatch", { method: "POST" });
+    toast("已还原原始文件，重启 ZCode 生效");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+async function doKillZcode() {
+  if (!confirm("将强制结束所有 ZCode.exe 进程（当前会话会断开）。结束后点「启动 ZCode」重启。继续？")) return;
+  try {
+    await api("/api/killzcode", { method: "POST" });
+    toast("ZCode 已结束。点「启动 ZCode」重启");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+async function doStartZcode() {
+  try {
+    const r = await api("/api/startzcode", { method: "POST" });
+    toast("已启动 ZCode");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+async function doEffective() {
+  try {
+    const b = await api("/api/effective-prompt");
+    let pill;
+    if (b.isOriginal) pill = '<span class="pill info">原始提示词（未注入）</span>';
+    else if (b.matchesActive) pill = `<span class="pill ok">已注入 · 与激活档案「${esc(b.activeProfile)}」各片一致</span>`;
+    else pill = '<span class="pill warn">已注入 · 但与激活档案不一致（可能注入的是旧档案或被外部修改）</span>';
+    const impTxt = { cleared: "已清空", original: "保留", custom: "已替换为自定义" }[b.importantState] || "-";
+    $("effStatus").innerHTML =
+      `<div>ZCode 版本 ${esc(b.version)} · 安全段${impTxt} · ${pill}</div>` +
+      `<div class="muted" style="margin-top:4px">开头句（cli_prefix）：${esc(b.cliPrefix || "（无法解析）")}</div>`;
+    $("effContent").value = b.identity;
+    $("effMask").style.display = "flex";
+  } catch (e) { toast(e.message, true); }
+}
+$("btnEffClose").onclick = () => ($("effMask").style.display = "none");
+$("btnPatch").onclick = doPatch;
+$("btnUnpatch").onclick = doUnpatch;
+$("btnEffective").onclick = doEffective;
+$("btnKillZcode").onclick = doKillZcode;
+$("btnStartZcode").onclick = doStartZcode;
+$("btnLogout").onclick = async () => {
+  try {
+    await api("/api/logout", { method: "POST" });
+  } catch (e) { /* 忽略 */ }
+  location.href = "/login";
+};
+$("btnBackup").onclick = async () => {
+  try {
+    const r = await api("/api/backup", { method: "POST" });
+    toast("已创建备份：" + (r.created || []).join("、"));
+    refresh();
+  } catch (e) { toast(e.message, true); }
+};
+async function delBackup(name) {
+  if (!confirm(`确定删除备份「${name}」？`)) return;
+  try {
+    await api("/api/backups/" + encodeURIComponent(name), { method: "DELETE" });
+    toast("已删除：" + name);
+    refresh();
+  } catch (e) { toast(e.message, true); }
+}
+
+renderLogo();
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

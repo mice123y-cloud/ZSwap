@@ -1,0 +1,21 @@
+# 本地配置（含本机路径/账号密码，勿提交）
+tool.config.json
+
+# 备份（含 ZCode 原始打包文件，勿提交）
+backups/
+
+# 运行日志
+log/
+
+# 提示词档案（默认不提交个人档案；示例与下方白名单除外）
+prompts/*
+!prompts/*.example
+!prompts/20260918渗透提示词.json
+!prompts/Zcode3.12原生系统提示词.json
+
+# 依赖/日志/临时
+node_modules/
+*.log
+
+# 本地快捷方式
+*.lnk
