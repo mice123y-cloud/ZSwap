@@ -422,7 +422,10 @@ async function handleApi(req, res, pathname) {
       try {
         originalIdentity = JSON.parse(patchEngine.IDENTITY_ANCHOR);
       } catch {}
-      const originalPrefix = "You are  ZCode, an interactive coding agent";
+      let originalPrefix = null;
+      try {
+        originalPrefix = JSON.parse(patchEngine.CLI_PREFIX_ANCHOR);
+      } catch {}
       let originalImportant = null;
       try {
         originalImportant = JSON.parse(patchEngine.IMPORTANT_ANCHOR);

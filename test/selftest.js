@@ -90,18 +90,20 @@ async function main() {
   const toolCfgPath = path.join(tmpRoot, "tool.config.json");
   fs.writeFileSync(toolCfgPath, JSON.stringify({ port: CONSOLE_PORT }, null, 2));
 
-  // 伪造一份带锚点的 zcode.cjs，用于注入测试（与真实文件的压缩结构一致：三元身份句 + 模板字面量 join + "# Harness" 尾锚）
+  // 伪造一份带锚点的 zcode.cjs，用于注入测试（与真实文件 3.14 的压缩结构一致：
+  // cli_prefix 单空格、IMPORTANT 段抽成模块级变量、三元身份句、Harness 段为 Xfn() 函数调用）
   const fakeBundlePath = path.join(tmpRoot, "fake-zcode.cjs");
   const BQ = "`"; // 反引号
   const RN = "\n"; // 真实 bundle 里 join 的模板字面量内是真实换行
   fs.writeFileSync(
     fakeBundlePath,
-    'var NOi="You are  ZCode, an interactive coding agent";function Sle(){let e=NOi;return{name:"CLI Prefix",source:"cli_prefix",injectionTarget:"system"}}' + RN +
+    'var NOi="You are ZCode, an interactive coding agent";function Sle(){let e=NOi;return{name:"CLI Prefix",source:"cli_prefix",injectionTarget:"system"}}' + RN +
+      'var weo="IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (C2 frameworks, credential testing, exploit development) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases."' + RN +
+      'function Xfn(){return["# Harness","- Text you output outside of tool use is displayed to the user as Github-flavored markdown in a terminal."].join(' + BQ + RN + BQ + ")}" + RN +
       'function $Oi(e){return[["",e?"You respond to the user according to the active Output Style below while using ZCode\'s tools and instructions.":' +
       '"You are an interactive ZCode agent that helps users with software engineering tasks.",' +
-      '"",' +
-      '"IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (C2 frameworks, credential testing, exploit development) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases."' +
-      "].join(" + BQ + RN + BQ + '),"","# Harness","- Text you output outside of tool use is displayed to the user as Github-flavored markdown in a terminal."].join(' + BQ + RN + BQ + ")}" + RN,
+      '"",weo' +
+      "].join(" + BQ + RN + BQ + '),"",Xfn()].join(' + BQ + RN + BQ + ")}" + RN,
     "utf8"
   );
 
@@ -222,7 +224,7 @@ async function main() {
     r = await api("/api/patch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
     check("分层: 注入返回 200", r.status === 200, JSON.stringify(r.body).slice(0, 300));
     const fragText = fs.readFileSync(fakeBundlePath, "utf8");
-    check("分层: cli_prefix 层已替换", fragText.includes(JSON.stringify(FRAG_PREFIX)) && !fragText.includes('"You are  ZCode, an interactive coding agent"'));
+    check("分层: cli_prefix 层已替换", fragText.includes(JSON.stringify(FRAG_PREFIX)) && !fragText.includes('"You are ZCode, an interactive coding agent"'));
     check("分层: identity 层已替换", fragText.includes(JSON.stringify(FRAG_IDENTITY)));
     check("分层: important 层替换为自定义(非清空)", fragText.includes(JSON.stringify(FRAG_IMPORTANT)) && !fragText.includes("IMPORTANT: Assist with"));
     check("分层: 注入结果语法合法", spawnSync(process.execPath, ["--check", fakeBundlePath]).status === 0);

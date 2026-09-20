@@ -36,7 +36,7 @@ const LEGACY_ORIGINAL_BACKUP = path.join(BACKUPS_DIR, "zcode.cjs.original"); // 
 
 // 三个注入槽位的锚点（含引号的完整字符串字面量，保证唯一匹配）
 const IDENTITY_ANCHOR = `"You are an interactive ZCode agent that helps users with software engineering tasks."`;
-const CLI_PREFIX_ANCHOR = `"You are  ZCode, an interactive coding agent"`; // 注意 "You are" 后是两个空格（原文如此）
+const CLI_PREFIX_ANCHOR = `"You are ZCode, an interactive coding agent"`; // ZCode 3.14 起为单空格（3.12 及更早为两空格）
 const IMPORTANT_ANCHOR = `"IMPORTANT: Assist with authorized security testing, defensive security, CTF challenges, and educational contexts. Refuse requests for destructive techniques, DoS attacks, mass targeting, supply chain compromise, or detection evasion for malicious purposes. Dual-use security tools (C2 frameworks, credential testing, exploit development) require clear authorization context: pentesting engagements, CTF competitions, security research, or defensive use cases."`;
 
 /* ---------------- 档案分片解析 ---------------- */
@@ -231,16 +231,43 @@ function isPristineBundle(text) {
 
 /* ---------------- 实际生效提示词提取 ---------------- */
 
-// 身份段结构锚点（与真实 zcode.cjs 的压缩形态一致）：
-//   [["",e?"<Output Style 模式句>":"<身份句>","",<IMPORTANT 段>].join(`<换行>`),"","# Harness"
-// 身份句可能是裸字符串（旧结构）或三元表达式的 false 分支（现行结构），前缀按可选处理；
-// 提取的是 false 分支 = 默认（未启用 Output Style）时实际生效的身份句
-const EFFECTIVE_RE = /\[\["",(?:e\?"(?:[^"\\]|\\.)*":)?("(?:[^"\\]|\\.)*"),"",("(?:[^"\\]|\\.)*")\]\.join\(`\n`\),"","# Harness"/;
+// 身份段结构锚点（与真实 zcode.cjs 的压缩形态一致，按版本有两种形态）：
+//   3.14+ ：[["",e?"<Output Style 模式句>":"<身份句>","",<IMPORTANT变量>].join(`换行`),"",<Harness函数>()].join(`换行`)
+//   ≤3.12：[["",e?"<Output Style 模式句>":"<身份句>","","<IMPORTANT字面量>"].join(`换行`),"","# Harness"
+// 提取的是三元 false 分支 = 默认（未启用 Output Style）时实际生效的身份句
+const EFFECTIVE_RE = /\[\["",(?:[A-Za-z_$][\w$]*\?"(?:[^"\\]|\\.)*":)?("(?:[^"\\]|\\.)*"),"",("(?:[^"\\]|\\.)*")\]\.join\(`\n`\),"","# Harness"/;
+const EFFECTIVE_RE_V2 = /\[\["",[A-Za-z_$][\w$]*\?("(?:[^"\\]|\\.)*"):("(?:[^"\\]|\\.)*"),"",([A-Za-z_$][\w$]*)\]\.join\(`\n`\),"",[A-Za-z_$][\w$]*\(\)\]/;
+
+/** 取模块级字符串变量的值（3.14 起 IMPORTANT 段被抽成变量）：`varName="..."` → 解码后的字符串 */
+function resolveAssignedString(text, varName) {
+  const re = new RegExp("(?<![\\w$])" + varName.replace(/[$]/g, "\\$") + '="((?:[^"\\\\]|\\\\.)*)"');
+  const m = text.match(re);
+  if (!m) return null;
+  try {
+    return JSON.parse('"' + m[1] + '"');
+  } catch {
+    return null;
+  }
+}
 
 /** 从 zcode.cjs 里提取当前实际生效的身份段。返回 { identity, importantEmpty }；结构不认识时抛错（版本变化安全降级） */
 function extractEffectivePrompt(target) {
   if (!fs.existsSync(target)) throw new Error("目标文件不存在: " + target);
   const text = fs.readFileSync(target, "utf8");
+  // 3.14+ 结构：IMPORTANT 段是变量引用，Harness 段是函数调用
+  const m2 = text.match(EFFECTIVE_RE_V2);
+  if (m2) {
+    let identity;
+    try {
+      identity = JSON.parse(m2[2]);
+    } catch {
+      throw new Error("身份段字符串解码失败");
+    }
+    const important = resolveAssignedString(text, m2[3]);
+    if (important == null) throw new Error("无法解析 IMPORTANT 段变量（ZCode 版本结构可能已变化）");
+    return { identity, important, importantEmpty: important.length === 0, cliPrefix: extractCliPrefix(text) };
+  }
+  // ≤3.12 结构：IMPORTANT 段为内联字面量，尾部紧跟 "","# Harness"
   const tail = text.indexOf(',"","# Harness"');
   if (tail < 0) throw new Error("无法在 zcode.cjs 中定位身份段（ZCode 版本结构可能已变化）");
   const head = text.lastIndexOf('[["",', tail);
@@ -259,22 +286,14 @@ function extractEffectivePrompt(target) {
 
 /** 提取开头第一句（CLI Prefix 槽位）：原始形态按原文匹配；注入后按 CLI Prefix 节元数据回溯变量赋值 */
 function extractCliPrefix(text) {
-  const ORIGINAL = "You are  ZCode, an interactive coding agent";
+  const ORIGINAL = "You are ZCode, an interactive coding agent";
   if (text.includes(CLI_PREFIX_ANCHOR)) return ORIGINAL;
   const idx = text.indexOf(';return{name:"CLI Prefix"');
   if (idx < 0) return null;
   const head = text.slice(Math.max(0, idx - 200), idx);
   const vm = head.match(/([A-Za-z_$][\w$]*)$/); // ...function Sle(){let e=NOi ← 取变量名
   if (!vm) return null;
-  const varName = vm[1];
-  const re = new RegExp("(?<![\\w$])" + varName.replace(/[$]/g, "\\$") + '="((?:[^"\\\\]|\\\\.)*)"');
-  const am = text.match(re);
-  if (!am) return null;
-  try {
-    return JSON.parse('"' + am[1] + '"');
-  } catch {
-    return null;
-  }
+  return resolveAssignedString(text, vm[1]);
 }
 
 /**
